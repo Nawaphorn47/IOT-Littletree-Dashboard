@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Farm IoT Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+
+    <style>
+        /* --- ตั้งค่าพื้นฐาน --- */
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f6; text-align: center; padding: 20px; margin: 0; }
+        h1 { color: #2c3e50; font-size: 28px; margin-bottom: 20px; }
+
+        /* --- แผงควบคุม (สวิตช์สไตล์ iOS ปรับสีใหม่) --- */
+        .controls { background: white; padding: 20px; border-radius: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); max-width: 450px; margin: 0 auto 30px auto; }
+        .controls h2 { margin-top: 0; color: #555; font-size: 20px; margin-bottom: 20px; }
+        
+        .switch-row { display: flex; justify-content: space-between; align-items: center; padding: 15px; background: #f8f9fa; border-radius: 12px; margin-bottom: 12px; }
+        .switch-row span.label-text { font-size: 16px; font-weight: 600; color: #444; display: flex; align-items: center;}
+        
+        /* 🌟 ป้ายสถานะกำกับข้อความ */
+        .badge { font-size: 12px; padding: 4px 10px; border-radius: 12px; color: white; margin-left: 10px; transition: 0.3s; font-weight: bold;}
+        .bg-red { background-color: #ff3b30; }
+        .bg-green { background-color: #34c759; }
+        .bg-gray { background-color: #bdc3c7; }
+
+        /* 🌟 สไตล์ของ iOS Toggle Switch (ปรับสีแดง-เขียว) */
+        .switch { position: relative; display: inline-block; width: 60px; height: 34px; flex-shrink: 0; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ff3b30; transition: .4s; border-radius: 34px; box-shadow: inset 0 1px 3px rgba(0,0,0,0.2); } /* เปลี่ยน default เป็นสีแดง */
+        .slider:before { position: absolute; content: ""; height: 26px; width: 26px; left: 4px; bottom: 4px; background-color: white; transition: .4s; border-radius: 50%; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
+        
+        /* สีเขียวตอนเปิดสวิตช์ */
+        input:checked + .slider { background-color: #34c759; }
+        input:checked + .slider:before { transform: translateX(26px); }
+
+        /* --- แผงเซนเซอร์ --- */
+        .container { display: flex; justify-content: center; gap: 20px; flex-wrap: wrap; margin-bottom: 30px; max-width: 900px; margin-left: auto; margin-right: auto; }
+        .card { background: white; padding: 20px; border-radius: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); width: calc(33.333% - 20px); min-width: 250px; box-sizing: border-box; }
+        .card h2 { color: #555; font-size: 18px; margin-top: 0; }
+        
+        .gauge-container { position: relative; width: 100%; height: 130px; display: flex; justify-content: center; align-items: flex-end; margin-bottom: 10px; }
+        .gauge-value { position: absolute; bottom: 0; font-size: 32px; font-weight: bold; color: #333; }
+        .status { font-size: 16px; font-weight: bold; padding: 8px; border-radius: 8px; background-color: #f8f9fa; }
+
+        /* --- กราฟย้อนหลัง --- */
+        .chart-container { background: white; padding: 20px; border-radius: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); max-width: 900px; margin: auto; box-sizing: border-box; width: 100%; }
+        .chart-wrapper { position: relative; height: 40vh; width: 100%; }
+
+        @media (max-width: 768px) {
+            body { padding: 10px; }
+            .card { width: 100%; } 
+            .chart-wrapper { height: 30vh; }
+        }
+    </style>
+</head>
+<body>
+
+    <h1>🌱 Smart Farm Dashboard</h1>
+
+    <div class="controls">
+        <h2>แผงควบคุมรดน้ำ</h2>
+        
+        <div class="switch-row">
+            <span class="label-text">🤖 โหมดอัตโนมัติ <span id="autoBadge" class="badge bg-green">เปิดใช้งาน</span></span>
+            <label class="switch">
+                <input type="checkbox" id="autoSwitch" checked>
+                <span class="slider"></span>
+            </label>
+        </div>
+
+        <div class="switch-row">
+            <span class="label-text">💧 ปั๊มน้ำ (Manual) <span id="pumpBadge" class="badge bg-gray">ปิดอยู่</span></span>
+            <label class="switch">
+                <input type="checkbox" id="pumpSwitch">
+                <span class="slider"></span>
+            </label>
+        </div>
+    </div>
+    
+    <div class="container">
+        <div class="card">
+            <h2>🌧️ เซนเซอร์น้ำฝน</h2>
+            <div class="gauge-container"><canvas id="rainGauge"></canvas><div class="gauge-value"><span id="rain-val">0</span>%</div></div>
+            <div class="status" id="rain-status">-</div>
+        </div>
+        <div class="card">
+            <h2>🟤 ความชื้นในดิน</h2>
+            <div class="gauge-container"><canvas id="soilGauge"></canvas><div class="gauge-value"><span id="soil-val">0</span>%</div></div>
+            <div class="status" id="soil-status">-</div>
+        </div>
+        <div class="card">
+            <h2>🧪 ค่า EC</h2>
+            <div class="gauge-container"><canvas id="ecGauge"></canvas><div class="gauge-value"><span id="ec-val">0</span>%</div></div>
+            <div class="status" id="ec-status">-</div>
+        </div>
+    </div>
+
+    <div class="chart-container">
+        <h2>📈 ข้อมูลย้อนหลัง 24 ชั่วโมง</h2>
+        <div class="chart-wrapper"><canvas id="historyChart"></canvas></div>
+    </div>
+
+    <script>
+        // ---------------- 1. ลอจิกของ iOS Switch & ป้ายสถานะ ----------------
+        const autoSwitch = document.getElementById('autoSwitch');
+        const pumpSwitch = document.getElementById('pumpSwitch');
+        const autoBadge = document.getElementById('autoBadge');
+        const pumpBadge = document.getElementById('pumpBadge');
+
+        // เมื่อกดสวิตช์ Auto
+        autoSwitch.addEventListener('change', function() {
+            if (this.checked) {
+                sendPumpCommand('AUTO');
+                pumpSwitch.checked = false; 
+                autoBadge.innerText = "เปิดใช้งาน"; autoBadge.className = "badge bg-green";
+                pumpBadge.innerText = "ปิดอยู่"; pumpBadge.className = "badge bg-gray";
+            } else {
+                sendPumpCommand('OFF'); // ปิดออโต้ ให้ปิดปั๊มด้วยเพื่อความปลอดภัย
+                pumpSwitch.checked = false;
+                autoBadge.innerText = "ปิดแล้ว"; autoBadge.className = "badge bg-red";
+                pumpBadge.innerText = "ปิดอยู่"; pumpBadge.className = "badge bg-red";
+            }
+        });
+
+        // เมื่อกดสวิตช์ปั๊มน้ำ (Manual)
+        pumpSwitch.addEventListener('change', function() {
+            autoSwitch.checked = false; // ปิดออโต้ทันที
+            autoBadge.innerText = "ปิดอยู่"; autoBadge.className = "badge bg-red"; // แจ้งว่าคนกำลังคุมเอง
+
+            if (this.checked) {
+                sendPumpCommand('ON');
+                pumpBadge.innerText = "เปิดอยู่"; pumpBadge.className = "badge bg-green";
+            } else {
+                sendPumpCommand('OFF');
+                pumpBadge.innerText = "ปิดอยู่"; pumpBadge.className = "badge bg-red";
+            }
+        });
+
+        async function sendPumpCommand(command) {
+            try {
+                const response = await fetch('http://localhost:3000/api/pump', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ command: command })
+                });
+            } catch (error) { console.error('ส่งคำสั่งไม่สำเร็จ'); }
+        }
+
+        // ---------------- 2. สร้างเกจและกราฟ (ส่วนเดิม) ----------------
+        function createGaugeConfig(color) {
+            return {
+                type: 'doughnut',
+                data: { datasets: [{ data: [0, 100], backgroundColor: [color, '#e0e0e0'], borderWidth: 0, cutout: '75%' }] },
+                options: { responsive: true, maintainAspectRatio: false, rotation: -90, circumference: 180, plugins: { tooltip: { enabled: false }, legend: { display: false } }, animation: { animateRotate: true, animateScale: false } }
+            };
+        }
+
+        let rainGauge = new Chart(document.getElementById('rainGauge').getContext('2d'), createGaugeConfig('#3498db'));
+        let soilGauge = new Chart(document.getElementById('soilGauge').getContext('2d'), createGaugeConfig('#8e44ad'));
+        let ecGauge = new Chart(document.getElementById('ecGauge').getContext('2d'), createGaugeConfig('#f1c40f'));
+        let farmChart; 
+
+        async function fetchCurrentData() {
+            try {
+                const response = await fetch('http://localhost:3000/api/sensors');
+                const data = await response.json();
+
+                data.forEach(item => {
+                    let val = Math.round(item.value); 
+                    if (val > 100) val = 100; if (val < 0) val = 0; 
+
+                    if (item.sensor === 'rain_sensor') {
+                        document.getElementById('rain-val').innerText = val;
+                        rainGauge.data.datasets[0].data = [val, 100 - val]; rainGauge.update();
+                        let statusElem = document.getElementById('rain-status');
+                        if (val < 10) { statusElem.innerText = "ฝนไม่ตก"; statusElem.style.color = "#888"; } else { statusElem.innerText = "🌧️ ฝนกำลังตก!"; statusElem.style.color = "#3498db"; }
+                    }
+                    if (item.sensor === 'soil_sensor') {
+                        document.getElementById('soil-val').innerText = val;
+                        soilGauge.data.datasets[0].data = [val, 100 - val]; soilGauge.update();
+                        let statusElem = document.getElementById('soil-status');
+                        if (val < 30) { statusElem.innerText = "แห้งเกินไป (Dry)"; statusElem.style.color = "#e74c3c"; soilGauge.data.datasets[0].backgroundColor[0] = "#e74c3c";}
+                        else if (val <= 60) { statusElem.innerText = "ชุ่มชื้นพอดี (Good)"; statusElem.style.color = "#2ecc71"; soilGauge.data.datasets[0].backgroundColor[0] = "#2ecc71";}
+                        else { statusElem.innerText = "แฉะเกินไป (Wet)"; statusElem.style.color = "#3498db"; soilGauge.data.datasets[0].backgroundColor[0] = "#3498db";}
+                    }
+                    if (item.sensor === 'ec_sensor') {
+                        document.getElementById('ec-val').innerText = val;
+                        ecGauge.data.datasets[0].data = [val, 100 - val]; ecGauge.update();
+                        document.getElementById('ec-status').innerText = "ปกติ"; document.getElementById('ec-status').style.color = "#f1c40f";
+                    }
+                });
+            } catch (error) {}
+        }
+
+        async function renderChart() {
+            try {
+                const response = await fetch('http://localhost:3000/api/history');
+                const data = await response.json();
+                const ctx = document.getElementById('historyChart').getContext('2d');
+                if(farmChart) farmChart.destroy(); 
+                farmChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        datasets: [
+                            { label: 'ความชื้นดิน (%)', data: data.soil, borderColor: '#8e44ad', backgroundColor: 'rgba(142, 68, 173, 0.1)', fill: true, tension: 0.3 },
+                            { label: 'ฝน (%)', data: data.rain, borderColor: '#3498db', backgroundColor: 'rgba(52, 152, 219, 0.1)', fill: true, tension: 0.3 },
+                            { label: 'EC (%)', data: data.ec, borderColor: '#f1c40f', tension: 0.3 }
+                        ]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false, scales: { x: { type: 'time', time: { unit: 'hour', displayFormats: { hour: 'HH:mm' } }, title: { display: false } }, y: { min: 0, max: 100, title: { display: false } } }, plugins: { legend: { position: 'top' } } }
+                });
+            } catch (error) {}
+        }
+
+        fetchCurrentData(); renderChart();      
+        setInterval(fetchCurrentData, 5000); setInterval(renderChart, 60000); 
+    </script>
+</body>
+</html>
