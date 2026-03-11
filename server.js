@@ -4,7 +4,7 @@ const { InfluxDB } = require('@influxdata/influxdb-client');
 const mqtt = require('mqtt'); // 🌟 นำเข้า MQTT
 
 const app = express();
-const port = 3000;
+const port = process.env.PORT || 3000;
 
 app.use(express.static('public')); // 🌟 ให้ Express เสิร์ฟไฟล์จากโฟลเดอร์ public   
 app.use(cors()); 
@@ -19,12 +19,30 @@ const bucket = 'farm_data';
 const client = new InfluxDB({ url, token });
 const queryApi = client.getQueryApi(org);
 
+let realPumpStatus = 'OFF'; // ตัวแปรจำสถานะปั๊มจริง
+let realAutoStatus = 'OFF'; // ตัวแปรจำสถานะออโต้จริง
+
 // ---------------- ตั้งค่า MQTT ----------------
 const mqttClient = mqtt.connect('ws://broker.hivemq.com:8000/mqtt');
 const mqttTopic = 'SmartFarm/Pump2/Control';
+const mqttTopicStatus = 'SmartFarm/Pump2/Status';
 
 mqttClient.on('connect', () => {
     console.log('✅ เชื่อมต่อ MQTT สำเร็จ');
+    mqttClient.subscribe(mqttTopicStatus);  
+});
+
+mqttClient.on('message', (topic, message) => {
+    if (topic === mqttTopicStatus) {
+        const msg = message.toString();
+        if (msg.startsWith('PUMP:')) realPumpStatus = msg.split(':')[1];
+        if (msg.startsWith('AUTO:')) realAutoStatus = msg.split(':')[1];
+    }
+});
+
+// 🌟 สร้าง API ใหม่ให้หน้าเว็บเข้ามาแอบดูสถานะจริง
+app.get('/api/pump/status', (req, res) => {
+    res.json({ pump: realPumpStatus, auto: realAutoStatus });
 });
 
 // ---------------- 1. API ดึงค่าปัจจุบัน (เพิ่ม Limit ป้องกันข้อมูลซ้ำ) ----------------
@@ -62,7 +80,7 @@ app.get('/api/history', async (req, res) => {
         |> aggregateWindow(every: 1m, fn: mean, createEmpty: false)
         |> yield(name: "mean")
     `;
-    
+
     try {
         const results = { rain: [], soil: [], ec: [] };
         for await (const {values, tableMeta} of queryApi.iterateRows(fluxQueryHistory)) {

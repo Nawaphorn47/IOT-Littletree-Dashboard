@@ -109,30 +109,16 @@
         const pumpBadge = document.getElementById('pumpBadge');
 
         autoSwitch.addEventListener('change', function() {
-            if (this.checked) {
-                sendPumpCommand('AUTO');
-                pumpSwitch.checked = false; 
-                autoBadge.innerText = "เปิดใช้งาน"; autoBadge.className = "badge bg-green";
-                pumpBadge.innerText = "ปิดอยู่"; pumpBadge.className = "badge bg-gray";
-            } else {
-                sendPumpCommand('OFF'); 
-                pumpSwitch.checked = false;
-                autoBadge.innerText = "ปิดแล้ว"; autoBadge.className = "badge bg-red";
-                pumpBadge.innerText = "ปิดอยู่"; pumpBadge.className = "badge bg-red";
-            }
+            autoBadge.innerText = "⏳ กำลังส่งคำสั่ง..."; autoBadge.className = "badge bg-gray";
+            if (this.checked) { sendPumpCommand('AUTO'); pumpSwitch.checked = false; }
+            else { sendPumpCommand('OFF'); }
         });
 
         pumpSwitch.addEventListener('change', function() {
-            autoSwitch.checked = false; 
-            autoBadge.innerText = "ปิดอยู่"; autoBadge.className = "badge bg-red"; 
-
-            if (this.checked) {
-                sendPumpCommand('ON');
-                pumpBadge.innerText = "เปิดอยู่"; pumpBadge.className = "badge bg-green";
-            } else {
-                sendPumpCommand('OFF');
-                pumpBadge.innerText = "ปิดอยู่"; pumpBadge.className = "badge bg-red";
-            }
+            pumpBadge.innerText = "⏳ กำลังส่งคำสั่ง..."; pumpBadge.className = "badge bg-gray";
+            autoSwitch.checked = false;
+            if (this.checked) { sendPumpCommand('ON'); }
+            else { sendPumpCommand('OFF'); }
         });
 
         async function sendPumpCommand(command) {
@@ -225,9 +211,39 @@
             } catch (error) { console.error('โหลดกราฟไม่สำเร็จ', error); }
         }
 
+        // ---------------- 3. ระบบ 2-Way Feedback (อัปเดตสถานะของจริง) ----------------
+        async function fetchRealStatus() {
+            try {
+                const res = await fetch('/api/pump/status');
+                const data = await res.json();
+
+                // อัปเดตสวิตช์ Auto ให้ตรงกับบอร์ดจริงๆ
+                if (data.auto === 'ON') {
+                    autoSwitch.checked = true;
+                    autoBadge.innerText = "เปิดใช้งานจริง ✅"; autoBadge.className = "badge bg-green";
+                } else {
+                    autoSwitch.checked = false;
+                    autoBadge.innerText = "ปิดอยู่ ❌"; autoBadge.className = "badge bg-gray";
+                }
+
+                // อัปเดตสวิตช์ ปั๊ม ให้ตรงกับบอร์ดจริงๆ
+                if (data.pump === 'ON') {
+                    pumpSwitch.checked = true;
+                    pumpBadge.innerText = "น้ำไหลอยู่จริง 💦"; pumpBadge.className = "badge bg-green";
+                } else {
+                    pumpSwitch.checked = false;
+                    pumpBadge.innerText = "ปิดสนิท 🛑"; pumpBadge.className = "badge bg-gray";
+                }
+            } catch (error) {}
+        }
+
+        // สั่งให้เช็คความจริงจากบอร์ด ทุกๆ 2 วินาที
+        fetchRealStatus();
+        setInterval(fetchRealStatus, 2000);
+
         fetchCurrentData(); renderChart();      
         setInterval(fetchCurrentData, 5000); 
         setInterval(renderChart, 60000); 
     </script>
 </body>
-</html>
+</html> 
