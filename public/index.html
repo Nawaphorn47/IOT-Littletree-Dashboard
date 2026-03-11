@@ -19,13 +19,13 @@
         .switch-row { display: flex; justify-content: space-between; align-items: center; padding: 15px; background: #f8f9fa; border-radius: 12px; margin-bottom: 12px; }
         .switch-row span.label-text { font-size: 16px; font-weight: 600; color: #444; display: flex; align-items: center;}
         
-        /* 🌟 ป้ายสถานะกำกับข้อความ */
+        /* ป้ายสถานะกำกับข้อความ */
         .badge { font-size: 12px; padding: 4px 10px; border-radius: 12px; color: white; margin-left: 10px; transition: 0.3s; font-weight: bold;}
         .bg-red { background-color: #ff3b30; }
         .bg-green { background-color: #34c759; }
         .bg-gray { background-color: #bdc3c7; }
 
-        /* 🌟 สไตล์ของ iOS Toggle Switch (ปรับสีแดง-เขียว) */
+        /* สไตล์ของ iOS Toggle Switch */
         .switch { position: relative; display: inline-block; width: 60px; height: 34px; flex-shrink: 0; }
         .switch input { opacity: 0; width: 0; height: 0; }
         .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ff3b30; transition: .4s; border-radius: 34px; box-shadow: inset 0 1px 3px rgba(0,0,0,0.2); }
@@ -102,29 +102,56 @@
     </div>
 
     <script>
-        // ---------------- 1. ลอจิกของ iOS Switch & ป้ายสถานะ ----------------
+        // ==========================================
+        // 1. ระบบควบคุมปั๊มน้ำ & สวิตช์กันเด้ง
+        // ==========================================
         const autoSwitch = document.getElementById('autoSwitch');
         const pumpSwitch = document.getElementById('pumpSwitch');
         const autoBadge = document.getElementById('autoBadge');
         const pumpBadge = document.getElementById('pumpBadge');
 
+        let isWaitingForBoard = false;
+        let lockTimeout;
+
+        // ฟังก์ชันล็อกหน้าจอรอคำตอบจากบอร์ด (5 วินาที)
+        function startWaiting() {
+            isWaitingForBoard = true;
+            clearTimeout(lockTimeout);
+            lockTimeout = setTimeout(() => {
+                isWaitingForBoard = false; // เลิกรอถ้าบอร์ดไม่ตอบกลับ
+            }, 5000);
+        }
+
         autoSwitch.addEventListener('change', function() {
             autoBadge.innerText = "⏳ กำลังส่งคำสั่ง..."; autoBadge.className = "badge bg-gray";
-            if (this.checked) { sendPumpCommand('AUTO'); pumpSwitch.checked = false; }
-            else { sendPumpCommand('OFF'); }
+            startWaiting();
+            
+            if (this.checked) { 
+                sendPumpCommand('AUTO'); 
+                pumpSwitch.checked = false; 
+                pumpBadge.innerText = "ปิดอยู่ 🛑"; pumpBadge.className = "badge bg-gray";
+            } else { 
+                sendPumpCommand('OFF'); 
+            }
         });
 
         pumpSwitch.addEventListener('change', function() {
             pumpBadge.innerText = "⏳ กำลังส่งคำสั่ง..."; pumpBadge.className = "badge bg-gray";
+            startWaiting();
+            
             autoSwitch.checked = false;
+            autoBadge.innerText = "ปิดอยู่ 🛑"; autoBadge.className = "badge bg-gray";
+            
             if (this.checked) { sendPumpCommand('ON'); }
             else { sendPumpCommand('OFF'); }
         });
 
+        // ==========================================
+        // 2. ฟังก์ชัน API สื่อสารกับ Server
+        // ==========================================
         async function sendPumpCommand(command) {
             try {
-                // 🌟 แก้แล้ว: ลบ http://localhost:3000 ออก
-                const response = await fetch('/api/pump', {
+                await fetch('/api/pump', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ command: command })
@@ -132,7 +159,47 @@
             } catch (error) { console.error('ส่งคำสั่งไม่สำเร็จ'); }
         }
 
-        // ---------------- 2. สร้างเกจและกราฟ ----------------
+        // ระบบ 2-Way Feedback เช็คสถานะการทำงานจริงของบอร์ด
+        async function fetchRealStatus() {
+            try {
+                const res = await fetch('/api/pump/status');
+                const data = await res.json();
+
+                const boardAuto = (data.auto === 'ON');
+                const boardPump = (data.pump === 'ON');
+
+                // ถ้ารออยู่ ให้เช็คว่าบอร์ดทำงานเสร็จหรือยัง
+                if (isWaitingForBoard) {
+                    if (autoSwitch.checked === boardAuto && pumpSwitch.checked === boardPump) {
+                        isWaitingForBoard = false; // ตรงกันแล้ว ปลดล็อกได้
+                        clearTimeout(lockTimeout);
+                    } else {
+                        return; // ยังไม่ตรง ข้ามการอัปเดตไปก่อน
+                    }
+                }
+
+                // อัปเดต UI ให้ตรงกับความเป็นจริง
+                if (boardAuto) {
+                    autoSwitch.checked = true;
+                    autoBadge.innerText = "เปิดใช้งานจริง ✅"; autoBadge.className = "badge bg-green";
+                } else {
+                    autoSwitch.checked = false;
+                    autoBadge.innerText = "ปิดอยู่ ❌"; autoBadge.className = "badge bg-gray";
+                }
+
+                if (boardPump) {
+                    pumpSwitch.checked = true;
+                    pumpBadge.innerText = "น้ำไหลอยู่จริง 💦"; pumpBadge.className = "badge bg-green";
+                } else {
+                    pumpSwitch.checked = false;
+                    pumpBadge.innerText = "ปิดสนิท 🛑"; pumpBadge.className = "badge bg-gray";
+                }
+            } catch (error) {}
+        }
+
+        // ==========================================
+        // 3. ระบบแสดงผลข้อมูลเซนเซอร์ & กราฟ (Chart.js)
+        // ==========================================
         function createGaugeConfig(color) {
             return {
                 type: 'doughnut',
@@ -146,9 +213,9 @@
         let ecGauge = new Chart(document.getElementById('ecGauge').getContext('2d'), createGaugeConfig('#f1c40f'));
         let farmChart; 
 
+        // ดึงข้อมูลเซนเซอร์ล่าสุดมาโชว์ที่เกจ
         async function fetchCurrentData() {
             try {
-                // 🌟 ตรงนี้ถูกอยู่แล้ว
                 const response = await fetch('/api/sensors');
                 const data = await response.json();
 
@@ -179,16 +246,15 @@
             } catch (error) {}
         }
 
+        // ดึงข้อมูลย้อนหลังมาวาดกราฟเส้น
         async function renderChart() {
             try {
-                // 🌟 แก้แล้ว: ลบ http://localhost:3000 ออก
                 const response = await fetch('/api/history');
                 const data = await response.json();
                 
                 const ctx = document.getElementById('historyChart').getContext('2d');
                 if(farmChart) farmChart.destroy(); 
                 
-                // 🌟 แก้บั๊กปีกกา { } เกินตรงนี้ให้แล้วครับ
                 farmChart = new Chart(ctx, {
                     type: 'line',
                     data: {
@@ -211,39 +277,17 @@
             } catch (error) { console.error('โหลดกราฟไม่สำเร็จ', error); }
         }
 
-        // ---------------- 3. ระบบ 2-Way Feedback (อัปเดตสถานะของจริง) ----------------
-        async function fetchRealStatus() {
-            try {
-                const res = await fetch('/api/pump/status');
-                const data = await res.json();
-
-                // อัปเดตสวิตช์ Auto ให้ตรงกับบอร์ดจริงๆ
-                if (data.auto === 'ON') {
-                    autoSwitch.checked = true;
-                    autoBadge.innerText = "เปิดใช้งานจริง ✅"; autoBadge.className = "badge bg-green";
-                } else {
-                    autoSwitch.checked = false;
-                    autoBadge.innerText = "ปิดอยู่ ❌"; autoBadge.className = "badge bg-gray";
-                }
-
-                // อัปเดตสวิตช์ ปั๊ม ให้ตรงกับบอร์ดจริงๆ
-                if (data.pump === 'ON') {
-                    pumpSwitch.checked = true;
-                    pumpBadge.innerText = "น้ำไหลอยู่จริง 💦"; pumpBadge.className = "badge bg-green";
-                } else {
-                    pumpSwitch.checked = false;
-                    pumpBadge.innerText = "ปิดสนิท 🛑"; pumpBadge.className = "badge bg-gray";
-                }
-            } catch (error) {}
-        }
-
-        // สั่งให้เช็คความจริงจากบอร์ด ทุกๆ 2 วินาที
+        // ==========================================
+        // 4. เริ่มการทำงาน (Initialization)
+        // ==========================================
         fetchRealStatus();
-        setInterval(fetchRealStatus, 2000);
-
-        fetchCurrentData(); renderChart();      
-        setInterval(fetchCurrentData, 5000); 
-        setInterval(renderChart, 60000); 
+        fetchCurrentData(); 
+        renderChart();      
+        
+        // ตั้งเวลารีเฟรชข้อมูลอัตโนมัติ
+        setInterval(fetchRealStatus, 2000);  // เช็คสถานะปั๊มทุก 2 วินาที
+        setInterval(fetchCurrentData, 5000); // เช็คเซนเซอร์ทุก 5 วินาที
+        setInterval(renderChart, 60000);     // อัปเดตกราฟทุก 1 นาที
     </script>
 </body>
-</html> 
+</html>
