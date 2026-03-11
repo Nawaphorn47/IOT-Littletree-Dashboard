@@ -123,24 +123,24 @@
         }
 
         autoSwitch.addEventListener('change', function() {
-            autoBadge.innerText = "⏳ กำลังส่งคำสั่ง..."; autoBadge.className = "badge bg-gray";
+            autoBadge.innerText = "กำลังส่งคำสั่ง..."; autoBadge.className = "badge bg-gray";
             startWaiting();
             
             if (this.checked) { 
                 sendPumpCommand('AUTO'); 
                 pumpSwitch.checked = false; 
-                pumpBadge.innerText = "ปิดอยู่ 🛑"; pumpBadge.className = "badge bg-gray";
+                pumpBadge.innerText = "ปิดอยู่"; pumpBadge.className = "badge bg-gray";
             } else { 
                 sendPumpCommand('OFF'); 
             }
         });
 
         pumpSwitch.addEventListener('change', function() {
-            pumpBadge.innerText = "⏳ กำลังส่งคำสั่ง..."; pumpBadge.className = "badge bg-gray";
+            pumpBadge.innerText = "กำลังส่งคำสั่ง..."; pumpBadge.className = "badge bg-gray";
             startWaiting();
             
             autoSwitch.checked = false;
-            autoBadge.innerText = "ปิดอยู่ 🛑"; autoBadge.className = "badge bg-gray";
+            autoBadge.innerText = "ปิดอยู่"; autoBadge.className = "badge bg-gray";
             
             if (this.checked) { sendPumpCommand('ON'); }
             else { sendPumpCommand('OFF'); }
@@ -181,18 +181,18 @@
                 // อัปเดต UI ให้ตรงกับความเป็นจริง
                 if (boardAuto) {
                     autoSwitch.checked = true;
-                    autoBadge.innerText = "เปิดใช้งานจริง ✅"; autoBadge.className = "badge bg-green";
+                    autoBadge.innerText = "เปิดใช้งานจริง"; autoBadge.className = "badge bg-green";
                 } else {
                     autoSwitch.checked = false;
-                    autoBadge.innerText = "ปิดอยู่ ❌"; autoBadge.className = "badge bg-gray";
+                    autoBadge.innerText = "ปิดอยู่"; autoBadge.className = "badge bg-gray";
                 }
 
                 if (boardPump) {
                     pumpSwitch.checked = true;
-                    pumpBadge.innerText = "น้ำไหลอยู่จริง 💦"; pumpBadge.className = "badge bg-green";
+                    pumpBadge.innerText = "น้ำไหลอยู่จริง"; pumpBadge.className = "badge bg-green";
                 } else {
                     pumpSwitch.checked = false;
-                    pumpBadge.innerText = "ปิดสนิท 🛑"; pumpBadge.className = "badge bg-gray";
+                    pumpBadge.innerText = "ปิดสนิท"; pumpBadge.className = "badge bg-gray";
                 }
             } catch (error) {}
         }
