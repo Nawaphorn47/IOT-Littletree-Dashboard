@@ -20,7 +20,7 @@ const client = new InfluxDB({ url, token });
 const queryApi = client.getQueryApi(org);
 
 // ---------------- ตั้งค่า MQTT ----------------
-const mqttClient = mqtt.connect('mqtt://broker.hivemq.com');
+const mqttClient = mqtt.connect('ws://broker.hivemq.com:8000/mqtt');
 const mqttTopic = 'SmartFarm/Pump2/Control';
 
 mqttClient.on('connect', () => {
