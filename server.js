@@ -6,7 +6,7 @@ const mqtt = require('mqtt'); // 🌟 นำเข้า MQTT
 const app = express();
 const port = 3000;
 
-app.use(express.static('public'))
+app.use(express.static('public')); // 🌟 ให้ Express เสิร์ฟไฟล์จากโฟลเดอร์ public   
 app.use(cors()); 
 app.use(express.json()); // 🌟 ให้ Express อ่าน JSON จากหน้าเว็บได้
 
