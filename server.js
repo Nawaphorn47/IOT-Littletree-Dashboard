@@ -51,16 +51,18 @@ app.get('/api/sensors', async (req, res) => {
 });
 
 // ---------------- 2. API ดึงข้อมูลย้อนหลัง 24 ชั่วโมง ----------------
+// ---------------- 2. API ดึงข้อมูลย้อนหลัง 24 ชั่วโมง ----------------
 app.get('/api/history', async (req, res) => {
-    // ดึงย้อนหลัง 24h และหาค่าเฉลี่ยทุกๆ 15 นาที
+    // 🌟 เปลี่ยนจาก 15m เป็น 1m เพื่อให้กราฟขึ้นไวๆ ถี่ยิบๆ
     const fluxQueryHistory = `
         from(bucket: "${bucket}")
         |> range(start: -24h)
         |> filter(fn: (r) => r["_measurement"] == "rain_sensor" or r["_measurement"] == "soil_sensor" or r["_measurement"] == "ec_sensor")
         |> filter(fn: (r) => r["_field"] == "value")
-        |> aggregateWindow(every: 15m, fn: mean, createEmpty: false)
+        |> aggregateWindow(every: 1m, fn: mean, createEmpty: false)
+        |> yield(name: "mean")
     `;
-
+    
     try {
         const results = { rain: [], soil: [], ec: [] };
         for await (const {values, tableMeta} of queryApi.iterateRows(fluxQueryHistory)) {

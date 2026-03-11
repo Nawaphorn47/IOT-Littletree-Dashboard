@@ -28,10 +28,9 @@
         /* 🌟 สไตล์ของ iOS Toggle Switch (ปรับสีแดง-เขียว) */
         .switch { position: relative; display: inline-block; width: 60px; height: 34px; flex-shrink: 0; }
         .switch input { opacity: 0; width: 0; height: 0; }
-        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ff3b30; transition: .4s; border-radius: 34px; box-shadow: inset 0 1px 3px rgba(0,0,0,0.2); } /* เปลี่ยน default เป็นสีแดง */
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ff3b30; transition: .4s; border-radius: 34px; box-shadow: inset 0 1px 3px rgba(0,0,0,0.2); }
         .slider:before { position: absolute; content: ""; height: 26px; width: 26px; left: 4px; bottom: 4px; background-color: white; transition: .4s; border-radius: 50%; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
         
-        /* สีเขียวตอนเปิดสวิตช์ */
         input:checked + .slider { background-color: #34c759; }
         input:checked + .slider:before { transform: translateX(26px); }
 
@@ -109,7 +108,6 @@
         const autoBadge = document.getElementById('autoBadge');
         const pumpBadge = document.getElementById('pumpBadge');
 
-        // เมื่อกดสวิตช์ Auto
         autoSwitch.addEventListener('change', function() {
             if (this.checked) {
                 sendPumpCommand('AUTO');
@@ -117,17 +115,16 @@
                 autoBadge.innerText = "เปิดใช้งาน"; autoBadge.className = "badge bg-green";
                 pumpBadge.innerText = "ปิดอยู่"; pumpBadge.className = "badge bg-gray";
             } else {
-                sendPumpCommand('OFF'); // ปิดออโต้ ให้ปิดปั๊มด้วยเพื่อความปลอดภัย
+                sendPumpCommand('OFF'); 
                 pumpSwitch.checked = false;
                 autoBadge.innerText = "ปิดแล้ว"; autoBadge.className = "badge bg-red";
                 pumpBadge.innerText = "ปิดอยู่"; pumpBadge.className = "badge bg-red";
             }
         });
 
-        // เมื่อกดสวิตช์ปั๊มน้ำ (Manual)
         pumpSwitch.addEventListener('change', function() {
-            autoSwitch.checked = false; // ปิดออโต้ทันที
-            autoBadge.innerText = "ปิดอยู่"; autoBadge.className = "badge bg-red"; // แจ้งว่าคนกำลังคุมเอง
+            autoSwitch.checked = false; 
+            autoBadge.innerText = "ปิดอยู่"; autoBadge.className = "badge bg-red"; 
 
             if (this.checked) {
                 sendPumpCommand('ON');
@@ -140,7 +137,8 @@
 
         async function sendPumpCommand(command) {
             try {
-                const response = await fetch('http://localhost:3000/api/pump', {
+                // 🌟 แก้แล้ว: ลบ http://localhost:3000 ออก
+                const response = await fetch('/api/pump', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ command: command })
@@ -148,7 +146,7 @@
             } catch (error) { console.error('ส่งคำสั่งไม่สำเร็จ'); }
         }
 
-        // ---------------- 2. สร้างเกจและกราฟ (ส่วนเดิม) ----------------
+        // ---------------- 2. สร้างเกจและกราฟ ----------------
         function createGaugeConfig(color) {
             return {
                 type: 'doughnut',
@@ -164,6 +162,7 @@
 
         async function fetchCurrentData() {
             try {
+                // 🌟 ตรงนี้ถูกอยู่แล้ว
                 const response = await fetch('/api/sensors');
                 const data = await response.json();
 
@@ -196,10 +195,14 @@
 
         async function renderChart() {
             try {
-                const response = await fetch('http://localhost:3000/api/history');
+                // 🌟 แก้แล้ว: ลบ http://localhost:3000 ออก
+                const response = await fetch('/api/history');
                 const data = await response.json();
+                
                 const ctx = document.getElementById('historyChart').getContext('2d');
                 if(farmChart) farmChart.destroy(); 
+                
+                // 🌟 แก้บั๊กปีกกา { } เกินตรงนี้ให้แล้วครับ
                 farmChart = new Chart(ctx, {
                     type: 'line',
                     data: {
@@ -209,13 +212,22 @@
                             { label: 'EC (%)', data: data.ec, borderColor: '#f1c40f', tension: 0.3 }
                         ]
                     },
-                    options: { responsive: true, maintainAspectRatio: false, scales: { x: { type: 'time', time: { unit: 'hour', displayFormats: { hour: 'HH:mm' } }, title: { display: false } }, y: { min: 0, max: 100, title: { display: false } } }, plugins: { legend: { position: 'top' } } }
+                    options: { 
+                        responsive: true, 
+                        maintainAspectRatio: false, 
+                        scales: { 
+                            x: { type: 'time', time: { unit: 'hour', displayFormats: { hour: 'HH:mm' } }, title: { display: false } }, 
+                            y: { min: 0, max: 100, title: { display: false } } 
+                        }, 
+                        plugins: { legend: { position: 'top' } } 
+                    }
                 });
-            } catch (error) {}
+            } catch (error) { console.error('โหลดกราฟไม่สำเร็จ', error); }
         }
 
         fetchCurrentData(); renderChart();      
-        setInterval(fetchCurrentData, 5000); setInterval(renderChart, 60000); 
+        setInterval(fetchCurrentData, 5000); 
+        setInterval(renderChart, 60000); 
     </script>
 </body>
 </html>
