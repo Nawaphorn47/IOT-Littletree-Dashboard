@@ -1,16 +1,18 @@
 const express = require('express');
 const cors = require('cors');
 const { InfluxDB } = require('@influxdata/influxdb-client');
-const mqtt = require('mqtt'); // 🌟 นำเข้า MQTT
+const mqtt = require('mqtt');
 
 const app = express();
 const port = process.env.PORT || 3000;
 
-app.use(express.static('public')); // 🌟 ให้ Express เสิร์ฟไฟล์จากโฟลเดอร์ public   
+app.use(express.static('public')); // ให้ Express เสิร์ฟไฟล์หน้าเว็บจากโฟลเดอร์ public   
 app.use(cors()); 
-app.use(express.json()); // 🌟 ให้ Express อ่าน JSON จากหน้าเว็บได้
+app.use(express.json()); // ให้ Express อ่าน JSON จากหน้าเว็บได้
 
-// ---------------- ตั้งค่า InfluxDB ----------------
+// ==========================================
+// 1. ตั้งค่า InfluxDB (เชื่อมต่อฐานข้อมูล Cloud)
+// ==========================================
 const url = 'https://us-east-1-1.aws.cloud2.influxdata.com';
 const token = 'x5MZQdYA2jGPv4Qmuyc18m_t3mjzNl8wDiz6ahuKOjOiNIRieHLClWYlL5CfNWzhQUBJLY_ux0K91Rt5498o_g==';
 const org = 'littletree';
@@ -19,19 +21,22 @@ const bucket = 'farm_data';
 const client = new InfluxDB({ url, token });
 const queryApi = client.getQueryApi(org);
 
+// ==========================================
+// 2. ตั้งค่า MQTT (เชื่อมต่อบอร์ด ESP32)
+// ==========================================
 let realPumpStatus = 'OFF'; // ตัวแปรจำสถานะปั๊มจริง
 let realAutoStatus = 'OFF'; // ตัวแปรจำสถานะออโต้จริง
 
-// ---------------- ตั้งค่า MQTT ----------------
 const mqttClient = mqtt.connect('ws://broker.hivemq.com:8000/mqtt');
 const mqttTopic = 'SmartFarm/Pump2/Control';
 const mqttTopicStatus = 'SmartFarm/Pump2/Status';
 
 mqttClient.on('connect', () => {
     console.log('✅ เชื่อมต่อ MQTT สำเร็จ');
-    mqttClient.subscribe(mqttTopicStatus);  
+    mqttClient.subscribe(mqttTopicStatus); // ดักฟังเสียงตอบกลับจากบอร์ด
 });
 
+// เมื่อบอร์ดตะโกนสถานะกลับมา ให้เซฟเก็บไว้
 mqttClient.on('message', (topic, message) => {
     if (topic === mqttTopicStatus) {
         const msg = message.toString();
@@ -40,12 +45,11 @@ mqttClient.on('message', (topic, message) => {
     }
 });
 
-// 🌟 สร้าง API ใหม่ให้หน้าเว็บเข้ามาแอบดูสถานะจริง
-app.get('/api/pump/status', (req, res) => {
-    res.json({ pump: realPumpStatus, auto: realAutoStatus });
-});
+// ==========================================
+// 3. API ROUTES (ช่องทางให้หน้าเว็บดึงข้อมูล)
+// ==========================================
 
-// ---------------- 1. API ดึงค่าปัจจุบัน (เพิ่ม Limit ป้องกันข้อมูลซ้ำ) ----------------
+// 3.1 API ดึงค่าเซนเซอร์ปัจจุบัน (สำหรับโชว์เกจ)
 app.get('/api/sensors', async (req, res) => {
     const fluxQuery = `
         from(bucket: "${bucket}")
@@ -54,7 +58,6 @@ app.get('/api/sensors', async (req, res) => {
         |> filter(fn: (r) => r["_field"] == "value")
         |> last()
     `;
-
     try {
         const results = [];
         for await (const {values, tableMeta} of queryApi.iterateRows(fluxQuery)) {
@@ -63,14 +66,12 @@ app.get('/api/sensors', async (req, res) => {
         }
         res.json(results);
     } catch (error) {
-        console.error(error);
         res.status(500).json({ error: 'ดึงข้อมูลไม่สำเร็จ' });
     }
 });
 
-// ---------------- 2. API ดึงข้อมูลย้อนหลัง 24 ชั่วโมง ----------------
+// 3.2 API ดึงข้อมูลย้อนหลัง 24 ชั่วโมง (สำหรับวาดกราฟเส้น)
 app.get('/api/history', async (req, res) => {
-    // 🌟 เปลี่ยนจาก 15m เป็น 1m เพื่อให้กราฟขึ้นไวๆ ถี่ยิบๆ
     const fluxQueryHistory = `
         from(bucket: "${bucket}")
         |> range(start: -24h)
@@ -79,7 +80,6 @@ app.get('/api/history', async (req, res) => {
         |> aggregateWindow(every: 1m, fn: mean, createEmpty: false)
         |> yield(name: "mean")
     `;
-
     try {
         const results = { rain: [], soil: [], ec: [] };
         for await (const {values, tableMeta} of queryApi.iterateRows(fluxQueryHistory)) {
@@ -90,14 +90,13 @@ app.get('/api/history', async (req, res) => {
         }
         res.json(results);
     } catch (error) {
-        console.error(error);
         res.status(500).json({ error: 'ดึงข้อมูลประวัติไม่สำเร็จ' });
     }
 });
 
-// ---------------- 3. API สั่งเปิด-ปิดปั๊มน้ำ (MQTT) ----------------
+// 3.3 API สั่งเปิด-ปิดปั๊มน้ำ
 app.post('/api/pump', (req, res) => {
-    const { command } = req.body; // รับค่า ON, OFF, หรือ AUTO จากหน้าเว็บ
+    const { command } = req.body; 
     if (['ON', 'OFF', 'AUTO'].includes(command)) {
         mqttClient.publish(mqttTopic, command);
         res.json({ success: true, message: `ส่งคำสั่ง ${command} สำเร็จ` });
@@ -106,12 +105,16 @@ app.post('/api/pump', (req, res) => {
     }
 });
 
-// ---------------- 4. API สำหรับ Export เป็น CSV (ดึงเข้า Google Sheets ได้เลย) ----------------
+// 3.4 API สำหรับเช็คสถานะการทำงานจริงของบอร์ด
+app.get('/api/pump/status', (req, res) => {
+    res.json({ pump: realPumpStatus, auto: realAutoStatus });
+});
+
+// 3.5 API Export ข้อมูลเป็น CSV (สำหรับนำไปลง Google Sheets / Excel)
 app.get('/api/csv', async (req, res) => {
-    // 🌟 ใช้คำสั่ง Pivot เพื่อรวบรวมเซนเซอร์ 3 ตัวให้อยู่ในบรรทัดเดียวกัน (เรียงตามเวลา)
     const fluxQueryCSV = `
         from(bucket: "${bucket}")
-        |> range(start: -24h) // ดึงย้อนหลัง 24 ชั่วโมง (ปรับเพิ่มลดได้)
+        |> range(start: -24h) // ดึงย้อนหลัง 24 ชม.
         |> filter(fn: (r) => r["_measurement"] == "rain_sensor" or r["_measurement"] == "soil_sensor" or r["_measurement"] == "ec_sensor")
         |> filter(fn: (r) => r["_field"] == "value")
         |> aggregateWindow(every: 15m, fn: mean, createEmpty: false) // หาค่าเฉลี่ยทุกๆ 15 นาที
@@ -119,25 +122,33 @@ app.get('/api/csv', async (req, res) => {
     `;
 
     try {
-        // สร้างหัวตาราง CSV (Header)
-        let csvString = "วัน-เวลา,น้ำฝน(%),ความชื้นดิน(%),EC(%)\n";
+        let csvString = "Date-time,Rain(%),Soil Moisture(%),EC(%)\n";
 
         for await (const {values, tableMeta} of queryApi.iterateRows(fluxQueryCSV)) {
             const o = tableMeta.toObject(values);
             
-            // แปลงเวลาให้เป็นโซนไทย (Asia/Bangkok)
-            const time = new Date(o._time).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' });
+            // สร้าง Date Object และบวกเวลาให้เป็นโซนไทย (UTC+7)
+            const d = new Date(o._time);
+            d.setHours(d.getHours() + 7);
+
+            // บังคับฟอร์แมตเป็น YYYY-MM-DD HH:mm:ss 
+            const year = d.getUTCFullYear();
+            const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+            const day = String(d.getUTCDate()).padStart(2, '0');
+            const hours = String(d.getUTCHours()).padStart(2, '0');
+            const minutes = String(d.getUTCMinutes()).padStart(2, '0');
+            const seconds = String(d.getUTCSeconds()).padStart(2, '0');
             
-            // ดึงค่ามาปัดเศษทศนิยม (ถ้าไม่มีค่าในช่วงเวลานั้นให้ใส่ 0)
+            const time = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+            
+            // ดึงค่ามาปัดเศษ (ถ้าไม่มีค่าให้เป็น 0)
             const rain = o.rain_sensor ? Math.round(o.rain_sensor) : 0;
             const soil = o.soil_sensor ? Math.round(o.soil_sensor) : 0;
             const ec = o.ec_sensor ? Math.round(o.ec_sensor) : 0;
 
-            // นำมาต่อกันเป็น 1 บรรทัด
             csvString += `"${time}",${rain},${soil},${ec}\n`;
         }
 
-        // สั่งให้ Browser รู้ว่านี่คือไฟล์ CSV และบังคับดาวน์โหลด
         res.header('Content-Type', 'text/csv; charset=utf-8');
         res.attachment('farm_data_report.csv');
         res.send(csvString);
@@ -148,6 +159,9 @@ app.get('/api/csv', async (req, res) => {
     }
 });
 
+// ==========================================
+// 4. เริ่มเปิดเซิร์ฟเวอร์รัน
+// ==========================================
 app.listen(port, () => {
-    console.log(`🚀 Server กำลังรันอยู่ที่ http://localhost:${port}`);
+    console.log(`🚀 Server running on port ${port}`);
 });
