@@ -69,7 +69,6 @@ app.get('/api/sensors', async (req, res) => {
 });
 
 // ---------------- 2. API ดึงข้อมูลย้อนหลัง 24 ชั่วโมง ----------------
-// ---------------- 2. API ดึงข้อมูลย้อนหลัง 24 ชั่วโมง ----------------
 app.get('/api/history', async (req, res) => {
     // 🌟 เปลี่ยนจาก 15m เป็น 1m เพื่อให้กราฟขึ้นไวๆ ถี่ยิบๆ
     const fluxQueryHistory = `
@@ -104,6 +103,48 @@ app.post('/api/pump', (req, res) => {
         res.json({ success: true, message: `ส่งคำสั่ง ${command} สำเร็จ` });
     } else {
         res.status(400).json({ success: false, message: 'คำสั่งไม่ถูกต้อง' });
+    }
+});
+
+// ---------------- 4. API สำหรับ Export เป็น CSV (ดึงเข้า Google Sheets ได้เลย) ----------------
+app.get('/api/csv', async (req, res) => {
+    // 🌟 ใช้คำสั่ง Pivot เพื่อรวบรวมเซนเซอร์ 3 ตัวให้อยู่ในบรรทัดเดียวกัน (เรียงตามเวลา)
+    const fluxQueryCSV = `
+        from(bucket: "${bucket}")
+        |> range(start: -24h) // ดึงย้อนหลัง 24 ชั่วโมง (ปรับเพิ่มลดได้)
+        |> filter(fn: (r) => r["_measurement"] == "rain_sensor" or r["_measurement"] == "soil_sensor" or r["_measurement"] == "ec_sensor")
+        |> filter(fn: (r) => r["_field"] == "value")
+        |> aggregateWindow(every: 15m, fn: mean, createEmpty: false) // หาค่าเฉลี่ยทุกๆ 15 นาที
+        |> pivot(rowKey:["_time"], columnKey: ["_measurement"], valueColumn: "_value")
+    `;
+
+    try {
+        // สร้างหัวตาราง CSV (Header)
+        let csvString = "วัน-เวลา,น้ำฝน(%),ความชื้นดิน(%),EC(%)\n";
+
+        for await (const {values, tableMeta} of queryApi.iterateRows(fluxQueryCSV)) {
+            const o = tableMeta.toObject(values);
+            
+            // แปลงเวลาให้เป็นโซนไทย (Asia/Bangkok)
+            const time = new Date(o._time).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' });
+            
+            // ดึงค่ามาปัดเศษทศนิยม (ถ้าไม่มีค่าในช่วงเวลานั้นให้ใส่ 0)
+            const rain = o.rain_sensor ? Math.round(o.rain_sensor) : 0;
+            const soil = o.soil_sensor ? Math.round(o.soil_sensor) : 0;
+            const ec = o.ec_sensor ? Math.round(o.ec_sensor) : 0;
+
+            // นำมาต่อกันเป็น 1 บรรทัด
+            csvString += `"${time}",${rain},${soil},${ec}\n`;
+        }
+
+        // สั่งให้ Browser รู้ว่านี่คือไฟล์ CSV และบังคับดาวน์โหลด
+        res.header('Content-Type', 'text/csv; charset=utf-8');
+        res.attachment('farm_data_report.csv');
+        res.send(csvString);
+
+    } catch (error) {
+        console.error('CSV Error:', error);
+        res.status(500).send("เกิดข้อผิดพลาดในการดึงไฟล์ CSV");
     }
 });
 
